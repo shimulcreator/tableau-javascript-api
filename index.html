@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title></title>
+<!--    <script type="text/javascript" src="https://help.tableau.com/samples/en-us/js_api/jquery-1.9.1.js"></script>-->
+<!--    <script type="text/javascript" src="https://help.tableau.com/samples/en-us/js_api/jquery-ui-1.10.0.custom.js"></script>-->
+    <script type="text/javascript" src="https://public.tableau.com/javascripts/api/tableau-2.0.0.min.js"></script>
+
+    <script type="text/javascript">
+        var viz, workbook, activesheet;
+        function initViz() {
+            var containerDiv = document.getElementById("vizContainer"),
+                url = "https://public.tableau.com/views/Tableau-JavascriptAPI/SalesbySub-Category?:language=en-US&:retry=yes&:display_count=n&:origin=viz_share_link";
+            var options = {
+                // width: placeholderDiv.offsetWidth,
+                // height: placeholderDiv.offsetHeight,
+                hideTabs: true,
+                hideToolbar: true,
+                onFirstInteractive: function () {
+                    listenToMarksSelection();
+                    workbook = viz.getWorkbook();
+                    activeSheet = workbook.getActiveSheet();
+                }
+            };
+            viz = new tableau.Viz(containerDiv, url, options);
+        }
+
+        function filterOnFurniture() {
+            activeSheet.applyFilterAsync(
+                "Category",
+                "Furniture",
+                tableau.FilterUpdateType.REPLACE);
+        }
+        function addValuesToFilter() {
+            activeSheet.applyFilterAsync(
+                "Category",
+                ["Technology", "Office Supplies"],
+                tableau.FilterUpdateType.ADD);
+        }
+        function removeValuesFromFilter() {
+            activeSheet.applyFilterAsync(
+                "Category",
+                "Technology",
+                tableau.FilterUpdateType.REMOVE);
+        }
+        function filterRangeOfValues() {
+            activeSheet = workbook.getActiveSheet();
+            activeSheet.applyRangeFilterAsync(
+                "Sales",
+                {
+                    min: 500,
+                    max: 1000000
+                },
+                tableau.FilterUpdateType.REPLACE);
+        }
+        function clearFilters() {
+            activeSheet.clearFilterAsync("Category");
+            activeSheet.clearFilterAsync("Sales");
+        }
+        function switchToMapTab(sheetname) {
+            workbook.activateSheetAsync(sheetname);
+        }
+        function addValuesToSelection() {
+            workbook.getActiveSheet().selectMarksAsync(
+                "Country",
+                ["United States", "Mexico"],
+                tableau.FilterUpdateType.ADD);
+        }
+        function removeFromSelection() {
+            workbook.getActiveSheet().selectMarksAsync(
+                "SUM(Profit)",
+                {
+                    min: 0
+                },
+                tableau.FilterUpdateType.REMOVE);
+        }
+        function switchTabsThenFilterThenSelectMarks() {
+            workbook.activateSheetAsync("Global Sales and Profits")
+                .then(function (newSheet) {
+                    activeSheet = newSheet;
+
+                    // It's important to return the promise so the next link in the chain
+                    // won't be called until the filter completes.
+                    return activeSheet.applyRangeFilterAsync(
+                        "SUM(Sales)",
+                        {
+                            min: 50000,
+                        },
+                        tableau.FilterUpdateType.REPLACE);
+                })
+                .then(function (filterFieldName) {
+                    return activeSheet.selectMarksAsync(
+                        "Country",
+                        ["United States", "Mexico"],
+                        tableau.SelectionUpdateType.REPLACE);
+                });
+        }
+        function getSheetsAlertText(sheets) {
+            var alertText = [];
+
+            for (var i = 0, len = sheets.length; i < len; i++) {
+                var sheet = sheets[i];
+                alertText.push("  Sheet " + i);
+                alertText.push(" (" + sheet.getSheetType() + ")");
+                alertText.push(" - " + sheet.getName());
+                alertText.push("\n");
+            }
+
+            return alertText.join("");
+        }
+        function querySheets() {
+            var sheets = workbook.getPublishedSheetsInfo();
+            var text = getSheetsAlertText(sheets);
+            text = "Sheets in the workbook:\n" + text;
+            alert(text);
+        }
+        function queryDashboard() {
+            workbook.activateSheetAsync("Dashboard 1")
+                .then(function (dashboard) {
+                    var worksheets = dashboard.getWorksheets();
+                    var text = getSheetsAlertText(worksheets);
+                    text = "Worksheets in the dashboard:\n" + text;
+                    alert(text);
+                });
+        }
+        function changeDashboardSize() {
+            workbook.activateSheetAsync("Dashboard 1")
+                .then(function (dashboard) {
+                    dashboard.changeSizeAsync({
+                        behavior: tableau.SheetSizeBehavior.AUTOMATIC
+                    });
+                });
+        }
+
+        var dashboard, mapSheet, graphSheet;
+        function doSomeStuff(){
+            workbook.activateSheetAsync("Dashboard 1")
+                .then(function (sheet) {
+                    dashboard = sheet;
+                    mapSheet = dashboard.getWorksheets().get("Global Sales and Profits");
+                    graphSheet = dashboard.getWorksheets().get("Sales by Sub-Category");
+                    return mapSheet.applyFilterAsync("Country", "United States", tableau.FilterUpdateType.REPLACE);
+                })
+                .then(function () {
+                    // Do these two steps in parallel since they work on different sheets.
+                    mapSheet.applyFilterAsync("AVG(Sales)", {min: 500, max: 100000000} , tableau.FilterUpdateType.REPLACE);
+                    return graphSheet.clearFilterAsync("Category", "Furniture");
+                })
+                .then(function () {
+                    return graphSheet.selectMarksAsync("Sub-Category", "Tables", tableau.SelectionUpdateType.REPLACE);
+                });
+        }
+        function exportPDF() {
+            viz.showExportPDFDialog();
+        }
+        function exportImage() {
+            viz.showExportImageDialog();
+        }
+        function exportCrossTab() {
+            viz.showExportCrossTabDialog();
+        }
+        function exportData() {
+            viz.showExportDataDialog();
+        }
+        function revertAll() {
+            workbook.revertAllAsync();
+        }
+
+        function listenToMarksSelection() {
+            viz.addEventListener(tableau.TableauEventName.MARKS_SELECTION, onMarksSelection);
+        }
+
+        function onMarksSelection(marksEvent) {
+            return marksEvent.getMarksAsync().then(reportSelectedMarks);
+        }
+
+        function reportSelectedMarks(marks) {
+            var html = "";
+
+            for (var markIndex = 0; markIndex < marks.length; markIndex++) {
+                var pairs = marks[markIndex].getPairs();
+                html += "<b>Details " + (markIndex+1) + ":</b><ul>";
+
+                for (var pairIndex = 0; pairIndex < pairs.length; pairIndex++) {
+                    var pair = pairs[pairIndex];
+                    html += "<li><b>Dimension:</b> " + pair.fieldName;
+                    html += "<br/><b>Value:</b> " + pair.formattedValue + "</li>";
+                }
+
+                html += "</ul>";
+            }
+
+            var infoDiv = document.getElementById('markDetails');
+            infoDiv.innerHTML = html;
+        }
+
+    </script>
+</head>
+<body onload="initViz()" style="font: verdana;">
+    <input type="button" value="Furniture" onclick="filterOnFurniture()">
+    <input type="button" value="Add Tech and OS" onclick="addValuesToFilter()">
+    <input type="button" value="Remove Tech" onclick="removeValuesFromFilter()">
+    <input type="button" value="Filter range" onclick="filterRangeOfValues()">
+    <input type="button" value="Clear Filters" onclick="clearFilters()"><br/>
+    <input type="button" value="Sales View" onclick="switchToMapTab('Sales by Sub-Category')">
+    <input type="button" value="Dashboard View" onclick="switchToMapTab('Dashboard 1')"><br/>
+    <input type="button" value="Map View" onclick="switchToMapTab('Global Sales and Profits')">
+    <input type="button" value="Select US and Mexico" onclick="addValuesToSelection()">
+    <input type="button" value="Select Losses" onclick="removeFromSelection()"><br/>
+    <input type="button" value="Chain Example" onclick="switchTabsThenFilterThenSelectMarks()"><br/>
+    <input type="button" value="Query Sheets" onclick="querySheets()">
+    <input type="button" value="Query Dashboard" onclick="queryDashboard()">
+    <input type="button" value="Resize Dashboard" onclick="changeDashboardSize()">
+    <input type="button" value="Do Stuff" onclick="doSomeStuff()"><br/>
+    <input type="button" value="Export PDF" onclick="exportPDF()">
+    <input type="button" value="Export PDF" onclick="exportPDF()">
+    <input type="button" value="Export Image" onclick="exportImage()">
+    <input type="button" value="Export CrossTab" onclick="exportCrossTab()">
+    <input type="button" value="Export Data" onclick="exportData()">
+    <input type="button" value="Revert All" onclick="revertAll()">
+
+    <div id="vizContainer" style="position: absolute;"></div>
+    <div style="float: right" id="markDetails"></div>
+
+
+</body>
+</html>
